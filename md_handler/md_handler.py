@@ -12,7 +12,8 @@ from psd_handler.psd_handler import PSDHandler
 _PSD_LINK_RE = re.compile(r'(!\[(.+?)\]\(\{\{\s*([\w.]+)\s*\}\}\))')
 
 # Matches: ![alt](path/to/image.ext) — local image, not a {{ }} var, not http
-_IMG_LINK_RE = re.compile(r'(!\[([^\]]*)\]\((?!https?://)(?!\{\{)([^)]+\.(?:png|jpg|jpeg|gif|webp|svg))\))', re.IGNORECASE)
+# Alt text may contain [] (e.g. PSD layer directives like Focuses=["A"])
+_IMG_LINK_RE = re.compile(r'(!\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]\((?!https?://)(?!\{\{)([^)]+\.(?:png|jpg|jpeg|gif|webp|svg))\))', re.IGNORECASE)
 
 # Parses alt: "Base;Focuses=[A,B];Frames=[C,D]"
 _ARG_RE = re.compile(r'(\w+)=\[([^\]]*)\]')
@@ -36,12 +37,7 @@ class MDHandle:
         self.psd_handler = psd_handler
 
     def run(self):
-        # Copy .meta.yml files preserving directory structure
-        for meta_file in sorted(self.docs_dir.rglob(".meta.yml")):
-            rel = meta_file.relative_to(self.docs_dir)
-            dst = self.doc_output / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_bytes(meta_file.read_bytes())
+        # .meta.yml support removed — metadata now lives in frontmatter
 
         for md_file in sorted(self.docs_dir.rglob("*.md")):
             self.md_loader(md_file)
@@ -89,9 +85,14 @@ class MDHandle:
                 print(f"  ERROR rendering '{alt}': {e}")
                 return full_match
 
-            rel_path = Path(out_path).relative_to(self.docs_dir) if Path(out_path).is_relative_to(self.docs_dir) else Path(out_path)
             count += 1
-            return f"![{alt}]({rel_path})"
+            out = Path(out_path)
+            if self.media_base_url and out.is_relative_to(self.media_storage_output):
+                url_path = out.relative_to(self.media_storage_output)
+                return f"![{alt}]({self.media_base_url}/{url_path})"
+            elif out.is_relative_to(self.docs_dir):
+                return f"![{alt}]({out.relative_to(self.docs_dir)})"
+            return f"![{alt}]({out})"
 
         content = _PSD_LINK_RE.sub(psd_replacer, content)
 
