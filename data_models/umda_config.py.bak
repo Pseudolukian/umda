@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
 class AdapterConfigSection(BaseModel):
-    output_config_name: str = Field(default="")
+    output_config_name: str
     options: dict[str, Any] = Field(default={})
     sections: dict[str, Path] = Field(default={})  # section_name -> file_path
 
@@ -20,11 +20,10 @@ class AdapterConfigMedia(BaseModel):
 
 class AdapterConfig(BaseModel):
     doc_output: Path
-    mkdocs_path: Optional[Path] = Field(default=None)
-    config: Optional[AdapterConfigSection] = Field(default=None)
+    mkdocs_path: Path
+    config: AdapterConfigSection
     media: AdapterConfigMedia
-    swap_list: Optional[Path] = Field(default=None)
-    vuepress_path: Optional[Path] = Field(default=None)
+    swap_list: Path | None = Field(default=None)
 
     model_config = {"extra": "allow"}
 

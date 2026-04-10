@@ -75,16 +75,15 @@ def build(adapter_name: str):
     print(f"  doc_output:           {adapter_cfg.doc_output}")
     print(f"  media_storage_output: {adapter_cfg.media.media_storage_output}")
 
-    # 1. Config handler — patch and save mkdocs config (skipped if mkdocs_path not set)
-    if adapter_cfg.mkdocs_path is not None and adapter_cfg.config is not None:
-        config_handler = MkDocsConfigHandler(
-            mkdocs_path=adapter_cfg.mkdocs_path,
-            cfg=adapter_cfg.config,
-        )
-        config_handler.run()
-        data = build_umda_data(adapter_cfg.config.sections)
-    else:
-        data = build_umda_data({})
+    # 1. Config handler — patch and save mkdocs config
+    config_handler = MkDocsConfigHandler(
+        mkdocs_path=adapter_cfg.mkdocs_path,
+        cfg=adapter_cfg.config,
+    )
+    config_handler.run()
+
+    # 2. Build UMDAData from adapter sections (replaces routers)
+    data = build_umda_data(adapter_cfg.config.sections)
 
     # 3. PSDHandler
     psd_handler = PSDHandler(
