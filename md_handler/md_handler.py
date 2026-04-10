@@ -1,9 +1,10 @@
 import re
 import shutil
 from pathlib import Path
+from PIL import Image
 
-from yml_handler.yml_handler import YMLHandler
 from data_models.umda_data_yml import UMDAData
+from data_models.umda_config import AdapterConfig
 from data_models.psd_config import PSDConfig
 from psd_handler.psd_handler import PSDHandler
 
@@ -18,25 +19,29 @@ _ARG_RE = re.compile(r'(\w+)=\[([^\]]*)\]')
 
 
 class MDHandle:
-    def __init__(self, yml_handler: YMLHandler, docs_dir: Path, psd_handler: PSDHandler):
-        self.data: UMDAData = yml_handler.data
+    def __init__(
+        self,
+        data: UMDAData,
+        docs_dir: Path,
+        adapter_cfg: AdapterConfig,
+        psd_handler: PSDHandler,
+    ):
+        self.data = data
         self.docs_dir = Path(docs_dir)
-        self.doc_output = Path(yml_handler.config.doc_output)
-        self.image_storage_output = Path(yml_handler.config.image_storage_output)
-        self.yml_handler_config_doc_ymls = yml_handler.config.doc_ymls
+        self.adapter_cfg = adapter_cfg
+        self.doc_output = Path(adapter_cfg.doc_output)
+        self.media_storage_output = Path(adapter_cfg.media.media_storage_output)
+        self.image_ext = adapter_cfg.media.image_extantion.lower().lstrip(".")
+        self.media_base_url = adapter_cfg.media.media_base_url.rstrip("/")
         self.psd_handler = psd_handler
 
     def run(self):
-        # Copy specified ymls to doc_output
-        for yml_name in self.yml_handler_config_doc_ymls:
-            src = self.docs_dir / yml_name
-            if src.exists():
-                dst = self.doc_output / yml_name
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_bytes(src.read_bytes())
-                print(f"Copied yml: {yml_name}")
-            else:
-                print(f"WARN: doc_yml '{yml_name}' not found in {self.docs_dir}")
+        # Copy .meta.yml files preserving directory structure
+        for meta_file in sorted(self.docs_dir.rglob(".meta.yml")):
+            rel = meta_file.relative_to(self.docs_dir)
+            dst = self.doc_output / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(meta_file.read_bytes())
 
         for md_file in sorted(self.docs_dir.rglob("*.md")):
             self.md_loader(md_file)
@@ -45,7 +50,6 @@ class MDHandle:
         content = md_file.read_text(encoding="utf-8")
         new_content, count = self.md_process(content, md_file)
 
-        # Save to doc_output preserving directory structure
         rel = md_file.relative_to(self.docs_dir)
         out_file = self.doc_output / rel
         out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +61,6 @@ class MDHandle:
     def md_process(self, content: str, md_file: Path) -> tuple[str, int]:
         count = 0
 
-        # 1. PSD links: ![alt]({{ media.var }})
         def psd_replacer(m: re.Match) -> str:
             nonlocal count
             full_match = m.group(1)
@@ -92,30 +95,37 @@ class MDHandle:
 
         content = _PSD_LINK_RE.sub(psd_replacer, content)
 
-        # 2. Local image links: ![alt](./img/file.png)
         def img_replacer(m: re.Match) -> str:
             nonlocal count
             full_match = m.group(1)
             alt = m.group(2)
             img_path_str = m.group(3).strip()
 
-            # Resolve relative to md file's directory
             src = (md_file.parent / img_path_str).resolve()
             if not src.exists():
                 print(f"  WARN: image not found '{src}' — skipping")
                 return full_match
 
-            # Preserve structure relative to docs_dir inside image_storage_output
             try:
                 rel_to_docs = src.relative_to(self.docs_dir)
             except ValueError:
                 rel_to_docs = Path(src.name)
 
-            dst = self.image_storage_output / rel_to_docs
+            dst = (self.media_storage_output / rel_to_docs).with_suffix(f".{self.image_ext}")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+
+            src_ext = src.suffix.lower().lstrip(".")
+            if src_ext == self.image_ext:
+                shutil.copy2(src, dst)
+            else:
+                with Image.open(src) as img:
+                    mode = "RGBA" if self.image_ext == "webp" else "RGB"
+                    img.convert(mode).save(dst, format=self.image_ext)
 
             count += 1
+            if self.media_base_url:
+                url_path = dst.relative_to(self.media_storage_output)
+                return f"![{alt}]({self.media_base_url}/{url_path})"
             return f"![{alt}]({dst})"
 
         content = _IMG_LINK_RE.sub(img_replacer, content)

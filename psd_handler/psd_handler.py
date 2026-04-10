@@ -12,7 +12,8 @@ from data_models.psd_config import PSDConfig
 class PSDHandler:
     """Loads PSD files and renders layer compositions to webp."""
 
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path, image_ext: str = "webp"):
+        self.image_ext = image_ext.lower().lstrip(".")
         self.output_dir = Path(output_dir)
         self._cache: dict[Path, PSDImage] = {}
 
@@ -144,14 +145,14 @@ class PSDHandler:
             if groups_present:
                 subdir = self.output_dir / config.base_layer / "_".join(groups_present)
                 all_names = config.Focuses + config.Frames + config.Crops
-                filename = "_".join(all_names) + ".webp"
+                filename = "_".join(all_names) + f".{self.image_ext}"
             else:
                 subdir = self.output_dir / config.base_layer
-                filename = f"{config.base_layer}.webp"
+                filename = f"{config.base_layer}.{self.image_ext}"
 
             subdir.mkdir(parents=True, exist_ok=True)
             output_path = subdir / filename
-            canvas.save(output_path, format="webp")
+            canvas.save(output_path, format=self.image_ext)
             return output_path
 
         raise ValueError(f"base_layer '{config.base_layer}' group not iterable in PSD")

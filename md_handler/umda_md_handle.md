@@ -1,18 +1,69 @@
-## Обработка MD-файлов (Class MDHandle)
+## MDHandler
 
-Class MDHandle -- это класс обработчик MD-файлов, он запускается последним и распределяет запросы на обработку подстрок по ответвенным хендлерам:
+Класс `MDHandle` обходит все `.md`-файлы из `doc_input`, обрабатывает вставки изображений и сохраняет результат в `doc_output` с сохранением структуры папок. Оригинальные файлы не изменяются.
 
-- PSDHandler
+### Что обрабатывается
 
-### Обработка вставок PSD
-Ищем вхождения `{{ media.**}}` в конструкции `![]()`. Если находим, проверяем есть ли такая переменная в нашем dict `psd_handle` -- PSDHanlder.find("media.**"), если есть -- читаем часть в `[]`, где описано какие слои нужно накладывать друг на друга. 
+#### 1. PSD-вставки
 
-Синтаксис такой:
+```markdown
+![base_layer;Focuses=[A];Frames=[B,C]]({{ media.screenshots.diagram }})
+![Default;Crops=[Canvas]]({{ media.screenshots.diagram }})
+```
 
-- Первым аргументом идёт название верхнеуровневой директории, откуда берётся одноименный первый базовый слой на который будут накладываться последюущие слои. Например: `Account` -- в `psd` будет прочитана директория `Account` и взят из неё одноименный слой `Account`. 
-- Далее следуют аргументы `Focuses` и `Frames` -- это списки слоёв, которые будут наложены на первый базовый слой. UMDA найдёт в psd директории `Focuses` и `Frames` активирует слои перечисленные в списках. Нампример: `![Account;Focuses=[Account];Frames=[Account_btn,Account_email]]({{ media.screenshots.diagram }})`. Запись означает, что нужно открыть PSD-файл, перейти в папку `Account`, включить слой `Account`, далее перейим в папку `Focuses` и там включить слой `Account`, затем включить слои `Account_btn` и `Account_email` в секции `Frames`.
-- В слоях может быть указан только один базовый слой без `Focuses` и `Frames`.
-- Сначала активируется базовый слой, затем слои из `Focuses`, а в конце слои из `Frames`.
-- Опция `Cuts` используются только совместно с базовым слоем и не могут сочитаться с `Focuses` и `Frames`.
+- `{{ media.screenshots.diagram }}` — переменная, разрешается через `UMDAData` из yml-роутеров
+- `base_layer` — верхнеуровневая группа в PSD
+- `Focuses`, `Frames`, `Crops` — списки слоёв для наложения (кавычки вокруг имён игнорируются)
+- Вызывается `PSDHandler.render(PSDConfig(...))`, результат `.webp` сохраняется в `image_storage_output`
+- Ссылка в MD подменяется на абсолютный путь до `.webp`
 
-В итоге поготавливается запрос для `PSDHandler` следующего вида: `{"path_to_psd":{layers for handler}}` и передаём в `PSDHandler.render({"path_to_psd":{layers for handler}})`.
+Правила:
+- Сначала базовый слой, затем Focuses, затем Frames
+- `Crops` используется только без Focuses/Frames — обрезает итог по маске слоя
+
+#### 2. Локальные изображения
+
+```markdown
+![alt](./img/file.png)
+```
+
+- Поддерживаются: `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`
+- Файл копируется в `image_storage_output` с сохранением пути относительно `doc_input`
+- Ссылка подменяется на абсолютный путь до скопированного файла
+
+### Копирование yml-файлов
+
+В `umda.yml` секция `config.doc_ymls` задаёт список yml-файлов, которые нужно скопировать в `doc_output`:
+
+```yaml
+config:
+  doc_ymls:
+    - toc.yaml
+    - vars.yaml
+```
+
+Остальные yml не копируются.
+
+### Конфигурация (umda.yml)
+
+```yaml
+config:
+  doc_input: /path/to/source/docs
+  doc_output: /path/to/output
+  image_storage_output: /path/to/images
+  doc_ymls:
+    - toc.yaml
+    - vars.yaml
+routers:
+  media: media.yml
+  aliases: aliases.yml
+```
+
+### Запуск
+
+```bash
+umda /path/to/docs   # указать путь к доке
+umda .               # из папки с докой
+```
+
+`umda` — обёртка, запускает `main.py` через venv `/root/umda/.umda`.
