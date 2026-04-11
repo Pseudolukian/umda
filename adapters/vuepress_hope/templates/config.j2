@@ -1,0 +1,62 @@
+import { defineUserConfig } from "vuepress";
+import { hopeTheme } from "vuepress-theme-hope";
+import { viteBundler } from "@vuepress/bundler-vite";
+
+export default defineUserConfig({
+    bundler: viteBundler({
+        viteOptions: {
+            build: {
+                rollupOptions: {
+                    external: [/^\/media\/.*/],
+                },
+            },
+        },
+    }),
+    base: "{{BASE}}",
+    lang: "ru-RU",
+
+    title: "StormBPMN Docs",
+    description: "Документация StormBPMN",
+    head: [
+        ["link", { rel: "icon", href: "{{BASE}}favicon.svg", type: "image/svg+xml" }],
+        ["link", { rel: "stylesheet", href: "{{BASE}}stylesheets/bpmn-embedded.css" }],
+        ["link", { rel: "stylesheet", href: "{{BASE}}stylesheets/bpmn-codes.css" }],
+        ["link", { rel: "stylesheet", href: "{{BASE}}stylesheets/extra.css" }],
+        ["link", { rel: "stylesheet", href: "https://unpkg.com/primeicons/primeicons.css" }],
+    ],
+
+    theme: hopeTheme({
+        fullscreen: true,
+        plugins: {
+            searchPro: {
+                indexContent: true,
+            },
+            copyCode: {},
+            mdEnhance: {
+                mark: true,
+                align: true,
+                attrs: false,
+                tasklist: true,
+                hint: true,
+                component: true,
+            },
+        },
+        repo: "KotskinKotskin/stormbpmn-enduser-docs",
+        repoLabel: "GitHub",
+        repoDisplay: true,
+        docsRepo: "KotskinKotskin/stormbpmn-enduser-docs",
+        docsDir: "src",
+        docsBranch: "main",
+        editLink: true,
+        headerDepth: 2,
+        footer: "",
+        hotReload: true,
+        iconAssets: "fontawesome",
+        lastUpdated: true,
+
+        logo: "https://new.stormbpmn.com/favicon.svg",
+
+        navbar: {{NAVBAR}},
+        sidebar: {{SIDEBAR}},
+    }),
+});

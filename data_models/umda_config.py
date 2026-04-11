@@ -25,6 +25,8 @@ class AdapterConfig(BaseModel):
     media: AdapterConfigMedia
     swap_list: Optional[Path] = Field(default=None)
     vuepress_path: Optional[Path] = Field(default=None)
+    vars: Optional[Path] = Field(default=None)  # path to vars.yaml for var injection
+    nav: Optional[Path] = Field(default=None)  # path to nav.yaml for navbar/sidebar generation
 
     model_config = {"extra": "allow"}
 

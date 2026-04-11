@@ -84,7 +84,11 @@ def build(adapter_name: str):
         config_handler.run()
         data = build_umda_data(adapter_cfg.config.sections)
     else:
-        data = build_umda_data({})
+        # Load vars if available (e.g. for vuepress_hope)
+        if adapter_cfg.vars and Path(adapter_cfg.vars).exists():
+            data = build_umda_data({"vars": adapter_cfg.vars})
+        else:
+            data = build_umda_data({})
 
     # 3. PSDHandler
     psd_handler = PSDHandler(
@@ -102,13 +106,21 @@ def build(adapter_name: str):
     md_handle.run()
     psd_handler.terminate()
 
+    # 4b. VuePress vars injection (if vars path is set)
+    if adapter_cfg.vars is not None:
+        from adapters.vuepress_hope.vars_injector import VuepressVarsInjector
+        vars_data = _load_with_includes(adapter_cfg.vars)
+        injector = VuepressVarsInjector(vars_data)
+        count = injector.process_dir(Path(adapter_cfg.doc_output))
+        print(f"[UMDA] VuePress vars injected into {count} file(s)")
+
     # 5. Adapter-specific post-processing (swap_list)
-    _run_adapter(adapter_name, adapter_cfg)
+    _run_adapter(adapter_name, adapter_cfg, src_root=docs_dir)
 
     print(f"[UMDA] Done. Bundle ready at: {adapter_cfg.doc_output}")
 
 
-def _run_adapter(adapter_name: str, adapter_cfg):
+def _run_adapter(adapter_name: str, adapter_cfg, src_root=None):
     adapter_dir = UMDA_ROOT / "adapters" / adapter_name
     adapter_main = adapter_dir / "main.py"
 
@@ -129,10 +141,30 @@ def _run_adapter(adapter_name: str, adapter_cfg):
         return
 
     swap_list_path = adapter_cfg.swap_list or (adapter_dir / "swap_list.yml")
-    instance = adapter_class(
-        doc_output=adapter_cfg.doc_output,
-        swap_list_path=swap_list_path,
-    )
+
+    # Build kwargs for adapter constructor
+    kwargs = {
+        "doc_output": adapter_cfg.doc_output,
+        "swap_list_path": swap_list_path,
+    }
+    # Pass nav_path for vuepress_hope (from config.sections.nav or standalone nav field)
+    if adapter_cfg.nav:
+        kwargs["nav_path"] = adapter_cfg.nav
+    elif adapter_cfg.config and adapter_cfg.config.sections:
+        nav_path = adapter_cfg.config.sections.get("nav")
+        if nav_path:
+            kwargs["nav_path"] = nav_path
+    if adapter_cfg.vuepress_path:
+        kwargs["vuepress_path"] = adapter_cfg.vuepress_path
+    if hasattr(adapter_cfg, 'media') and adapter_cfg.media:
+        kwargs["media_base_url"] = adapter_cfg.media.media_base_url
+    if src_root:
+        kwargs["src_root"] = str(src_root)
+    # Pass base path for VuePress
+    if hasattr(adapter_cfg, 'base') and adapter_cfg.base:
+        kwargs["base"] = adapter_cfg.base
+
+    instance = adapter_class(**kwargs)
     instance.run()
 
 
