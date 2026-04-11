@@ -36,6 +36,22 @@ drop-down:
     src: '🔽 "Что такое группа?"'
     convert: '??? note "Что такое группа?"'
 
+include:
+  convert:
+    # ➡️ (path/to/file.md) → подстановка содержимого файла
+    # Реализована в коде адаптеров: MKdocsAdapter._apply_includes(), syntax_converter.process_includes()
+    from: 'r''➡️\s*\((.+?)\)\s*$'''
+    to: '{file_content}'
+  mkdocs_to: '{file_content}'
+  vuepress_to: '{file_content}'
+  examples:
+    src: '➡️ (_templates/warnings/perm_plan_role.md)'
+    mkdocs_convert: '--8<-- "_templates/warnings/perm_plan_role.md"'
+    vuepress_convert: |
+      ⚠️ "Ограничения возможностей плана, ролей и тарифа!"
+
+          Данная статья описывает работу с функциями сервиса...
+
 tabs:
   convert:
     # Детектирует весь блок вкладок от 🗂️ до первой строки без отступа или конца файла.

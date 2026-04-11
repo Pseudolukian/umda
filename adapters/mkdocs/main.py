@@ -25,9 +25,10 @@ class MKdocsAdapter:
     in doc_output.
     """
 
-    def __init__(self, doc_output: Path, swap_list_path: Path = _DEFAULT_SWAP_LIST):
+    def __init__(self, doc_output: Path, swap_list_path: Path = _DEFAULT_SWAP_LIST, src_root: Path = None, **kwargs):
         self.doc_output = Path(doc_output)
         self.swap_list_path = Path(swap_list_path)
+        self.src_root = Path(src_root) if src_root else self.doc_output
         self.swap_rules: dict = self._load_swap_list()
 
     def _load_swap_list(self) -> dict:
@@ -48,6 +49,9 @@ class MKdocsAdapter:
             print(f"[MKdocsAdapter] updated: {rel}")
 
     def _apply_swaps(self, content: str) -> str:
+        # Process includes FIRST — before any other swaps
+        content = self._apply_includes(content)
+
         for rule_name, rule in self.swap_rules.items():
             convert = rule.get("convert", {})
             from_raw = convert.get("from", "")
@@ -55,6 +59,8 @@ class MKdocsAdapter:
 
             if rule_name == "tabs":
                 content = self._apply_tabs(content)
+            elif rule_name == "include":
+                pass  # already handled above
             else:
                 if not from_raw or not to_raw:
                     continue
@@ -63,6 +69,31 @@ class MKdocsAdapter:
                 content = pattern.sub(to_str, content)
 
         return content
+
+    def _apply_includes(self, content: str) -> str:
+        """Replace ➡️ (path/to/file.md) with actual file content (inline include)."""
+        pattern = re.compile(r'^➡️\s*\((.+?)\)\s*$', re.MULTILINE)
+
+        def replacer(m):
+            file_path = m.group(1).strip()
+            # Resolve relative to src_root (original doc source)
+            target = self.src_root / file_path
+            if not target.exists():
+                # Try case-insensitive match
+                parent = target.parent
+                if parent.exists():
+                    for f in parent.iterdir():
+                        if f.name.lower() == target.name.lower():
+                            target = f
+                            break
+            if target.exists():
+                included = target.read_text(encoding='utf-8').rstrip()
+                return included
+            else:
+                print(f"  [include] WARNING: file not found: {target}")
+                return m.group(0)
+
+        return pattern.sub(replacer, content)
 
     def _apply_tabs(self, content: str) -> str:
         lines = content.split("\n")
