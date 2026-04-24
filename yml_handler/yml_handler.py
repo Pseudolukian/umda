@@ -19,7 +19,10 @@ class YMLHandler:
 
         raw = self._load_raw(self.umda_yml_file)
 
-        self.config = UMDAConfig(**raw.get("config", {}))
+        raw_config = dict(raw.get("config", {}))
+        if "S3" in raw_config and "s3" not in raw_config:
+            raw_config["s3"] = raw_config.pop("S3")
+        self.config = UMDAConfig(**raw_config)
 
         # Parse adapters — key in yml is "adapers" (legacy typo kept)
         raw_adapters: dict = raw.get("adapers", {})
