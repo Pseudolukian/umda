@@ -1,0 +1,122 @@
+# Порядок важен: комбинированные модификаторы (ℹ️🔽) — раньше одиночных (ℹ️, 🔽)
+# type: block — emoji/admonition с indented body → ::: container
+# type: regex — простая regex-замена
+# type: include — вставка содержимого файла
+# type: tabs — конвертация 🗂️ блоков (реализована в коде)
+
+admotion_info_collapse:
+  type: block
+  convert:
+    from: 'r''ℹ️🔽 "?(.+?)"?\s*$'''
+    to: '::: details \1'
+  examples:
+    src: 'ℹ️🔽 "Поток управления «в остальных случаях», поток по умолчанию"'
+    convert: '::: details Поток управления «в остальных случаях», поток по умолчанию'
+
+admotion_info:
+  type: block
+  convert:
+    from: 'r''ℹ️ "?(.+?)"?\s*$'''
+    to: '::: info \1'
+  examples:
+    src: 'ℹ️ "Зависимость от прав групп"'
+    convert: '::: info Зависимость от прав групп'
+
+admotion_warning:
+  type: block
+  convert:
+    from: 'r''⚠️ "?(.+?)"?\s*$'''
+    to: '::: warning \1'
+  examples:
+    src: '⚠️ "Ограничения возможностей прав"'
+    convert: '::: warning Ограничения возможностей прав'
+
+drop-down:
+  type: block
+  convert:
+    from: 'r''🔽 "?(.+?)"?\s*$'''
+    to: '::: details \1'
+  examples:
+    src: '🔽 "Что такое группа?"'
+    convert: '::: details Что такое группа?'
+
+mkdocs_collapsible:
+  type: block
+  convert:
+    from: 'r''^\?\?\?\+?\s+\w+\s+"?(.+?)"?\s*$'''
+    to: '::: details \1'
+  examples:
+    src: '??? note "Подробности"'
+    convert: '::: details Подробности'
+
+mkdocs_warning:
+  type: block
+  convert:
+    from: 'r''^\!\!\!\s+warning\s+"?(.+?)"?\s*$'''
+    to: '::: warning \1'
+
+mkdocs_note:
+  type: block
+  convert:
+    from: 'r''^\!\!\!\s+note\s+"?(.+?)"?\s*$'''
+    to: '::: info \1'
+
+mkdocs_notice:
+  type: block
+  convert:
+    from: 'r''^\!\!\!\s+notice\s*$'''
+    to: '::: info'
+
+mkdocs_admonition_generic:
+  type: block
+  convert:
+    from: 'r''^\!\!\!\s+\w+\s+"?(.+?)"?\s*$'''
+    to: '::: info \1'
+
+include:
+  type: include
+  convert:
+    from: 'r''➡️\s*\((.+?)\)\s*$'''
+    to: '{file_content}'
+  examples:
+    src: '➡️ (_templates/warnings/perm_plan_role.md)'
+    convert: '<содержимое файла инлайнится>'
+
+frontmatter_refs:
+  type: regex
+  convert:
+    from: 'r''\{\{\s*\$frontmatter\.([\w.]+)\s*\}\}'''
+    to: '<Fm p="\1" />'
+  examples:
+    src: '{{ $frontmatter.product_name }}'
+    convert: '<Fm p="product_name" />'
+
+fontawesome:
+  type: regex
+  convert:
+    # :fontawesome-solid-arrow-right:{ .blue-toggle } → <i class="fa-solid fa-arrow-right"></i>
+    from: 'r'':fontawesome-(solid|brands|regular)-([a-z0-9-]+):(\{[^}]*\}\s*)?'''
+    to: '<i class="fa-\1 fa-\2"></i>'
+  examples:
+    src: ':fontawesome-solid-arrow-right:'
+    convert: '<i class="fa-solid fa-arrow-right"></i>'
+
+tabs:
+  type: tabs
+  convert:
+    from: 'r''🗂️'''
+    to: '::: tabs'
+  examples:
+    src: |
+      🗂️
+      1. Linux
+          content
+      2. Windows
+          content
+    convert: |
+      ::: tabs
+      @tab Linux
+      content
+      @tab Windows
+      content
+      :::

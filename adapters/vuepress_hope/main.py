@@ -212,7 +212,8 @@ class Vuepress_hopeAdapter:
 
         # Convert mkdocs admonition syntax to VuePress Hope hint containers
         from adapters.vuepress_hope.syntax_converter import process_dir as convert_syntax
-        syntax_count = convert_syntax(src_dir, src_root=self.src_root)
+        swap_path = self.swap_list_path or (Path(__file__).parent / "swap_list.yml")
+        syntax_count = convert_syntax(src_dir, src_root=self.src_root, swap_list_path=swap_path)
         if syntax_count:
             print(f"[VuepressHope] converted admonitions in {syntax_count} file(s)")
 
