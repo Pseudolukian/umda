@@ -6,10 +6,10 @@ Reads swap_list.yml and applies rules to convert UMDA/MkDocs syntax
 to VuePress Hope hint containers and components.
 
 Rule types:
-  block   — emoji/admonition header + indented body → ::: container
-  regex   — simple regex substitution
-  include — inline file content
-  tabs    — 🗂️ tab blocks (code handler)
+  block   - emoji/admonition header + indented body -> ::: container
+  regex   - simple regex substitution
+  include - inline file content
+  tabs    - tab blocks (code handler)
 """
 from __future__ import annotations
 
@@ -37,63 +37,63 @@ def _load_swap_list(path: Path = _SWAP_LIST) -> dict:
         return yaml.safe_load(f) or {}
 
 
-# ─── Block converter (emoji/admonitions with indented body → ::: ) ───
-
 def _apply_block_rule(content: str, pattern: re.Pattern, container_header: str) -> str:
     """Convert block with header matching pattern + indented body into ::: container."""
-    lines = content.split('\n')
+    lines = content.split("\n")
     result = []
     i = 0
 
     while i < len(lines):
         m = pattern.match(lines[i])
         if m:
-            # Build header: replace \1, \2 etc with captured groups
             header = container_header
             for gi in range(1, len(m.groups()) + 1):
-                header = header.replace(f'\\{gi}', m.group(gi) or '')
+                header = header.replace(f"\\{gi}", m.group(gi) or "")
             result.append(header.rstrip())
             i += 1
 
-            # Skip blank line after header
-            if i < len(lines) and lines[i].strip() == '':
-                result.append('')
+            if i < len(lines) and lines[i].strip() == "":
+                result.append("")
                 i += 1
 
-            # Collect indented body (4 spaces or tab)
-            while i < len(lines) and (lines[i].startswith('    ') or lines[i].startswith('\t') or lines[i].strip() == ''):
+            while i < len(lines) and (
+                lines[i].startswith("    ")
+                or lines[i].startswith("\t")
+                or lines[i].strip() == ""
+            ):
                 line = lines[i]
-                if line.strip() == '':
+                if line.strip() == "":
                     j = i + 1
-                    while j < len(lines) and lines[j].strip() == '':
+                    while j < len(lines) and lines[j].strip() == "":
                         j += 1
-                    if j < len(lines) and (lines[j].startswith('    ') or lines[j].startswith('\t')):
-                        result.append('')
+                    if j < len(lines) and (
+                        lines[j].startswith("    ") or lines[j].startswith("\t")
+                    ):
+                        result.append("")
                         i += 1
                     else:
                         break
                 else:
-                    if line.startswith('    '):
+                    if line.startswith("    "):
                         result.append(line[4:])
-                    elif line.startswith('\t'):
+                    elif line.startswith("\t"):
                         result.append(line[1:])
                     else:
                         result.append(line)
                     i += 1
 
-            result.append(':::')
-            result.append('')
+            result.append(":::")
+            result.append("")
         else:
             result.append(lines[i])
             i += 1
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
-
-# ─── Include handler ───
 
 def _apply_include(content: str, pattern: re.Pattern, md_file: Path, src_root: Path) -> str:
-    """Replace ➡️ (path) with actual file content."""
+    """Replace include marker with actual file content."""
+
     def replacer(m):
         file_path = m.group(1).strip()
         target = src_root / file_path
@@ -105,18 +105,16 @@ def _apply_include(content: str, pattern: re.Pattern, md_file: Path, src_root: P
                         target = f
                         break
         if target.exists():
-            return target.read_text(encoding='utf-8').rstrip()
-        else:
-            print(f"  [include] WARNING: not found: {target} (in {md_file})")
-            return m.group(0)
+            return target.read_text(encoding="utf-8").rstrip()
+
+        print(f"  [include] WARNING: not found: {target} (in {md_file})")
+        return m.group(0)
 
     return pattern.sub(replacer, content)
 
 
-# ─── Tabs handler ───
-
 def _apply_tabs(content: str) -> str:
-    """Convert 🗂️ tab blocks to VuePress ::: tabs format."""
+    """Convert tab blocks to VuePress ::: tabs format."""
     lines = content.split("\n")
     result = []
     i = 0
@@ -151,7 +149,6 @@ def _apply_tabs(content: str) -> str:
                 for tab_name, body in tabs:
                     result.append(f"@tab {tab_name}")
                     for bline in body:
-                        # Remove 4-space indent
                         if bline.startswith("    "):
                             result.append(bline[4:])
                         elif bline.startswith("\t"):
@@ -166,7 +163,41 @@ def _apply_tabs(content: str) -> str:
     return "\n".join(result)
 
 
-# ─── Main entry point ───
+def _apply_all_rules(content: str, rules: dict, md_file: Path, src_root: Path) -> str:
+    """Apply all swap_list rules in deterministic order."""
+
+    for _, rule in rules.items():
+        if rule.get("type") == "include":
+            convert = rule.get("convert", {})
+            from_raw = convert.get("from", "")
+            if from_raw:
+                pattern = _parse_pattern(from_raw)
+                content = _apply_include(content, pattern, md_file, src_root)
+
+    for _, rule in rules.items():
+        if rule.get("type") == "block":
+            convert = rule.get("convert", {})
+            from_raw = convert.get("from", "")
+            to_raw = convert.get("to", "")
+            if from_raw and to_raw:
+                pattern = _parse_pattern(from_raw)
+                content = _apply_block_rule(content, pattern, to_raw)
+
+    for _, rule in rules.items():
+        if rule.get("type") == "regex":
+            convert = rule.get("convert", {})
+            from_raw = convert.get("from", "")
+            to_raw = convert.get("to", "")
+            if from_raw and to_raw:
+                pattern = _parse_pattern(from_raw)
+                content = pattern.sub(to_raw, content)
+
+    for _, rule in rules.items():
+        if rule.get("type") == "tabs":
+            content = _apply_tabs(content)
+
+    return content
+
 
 def process_dir(src_dir: Path, src_root: Path = None, swap_list_path: Path = None) -> int:
     """Process all MD files using rules from swap_list.yml.
@@ -181,7 +212,7 @@ def process_dir(src_dir: Path, src_root: Path = None, swap_list_path: Path = Non
 
     count = 0
     for md_file in sorted(src_dir.rglob("*.md")):
-        if '.vuepress' in str(md_file):
+        if ".vuepress" in str(md_file):
             continue
         content = md_file.read_text(encoding="utf-8")
         new_content = _apply_all_rules(content, rules, md_file, src_root)
@@ -189,43 +220,3 @@ def process_dir(src_dir: Path, src_root: Path = None, swap_list_path: Path = Non
             md_file.write_text(new_content, encoding="utf-8")
             count += 1
     return count
-
-
-def _apply_all_rules(content: str, rules: dict, md_file: Path, src_root: Path) -> str:
-    """Apply all swap_list rules in order."""
-
-    # Phase 1: includes FIRST (so included content gets processed by later rules)
-    for rule_name, rule in rules.items():
-        if rule.get("type") == "include":
-            convert = rule.get("convert", {})
-            from_raw = convert.get("from", "")
-            if from_raw:
-                pattern = _parse_pattern(from_raw)
-                content = _apply_include(content, pattern, md_file, src_root)
-
-    # Phase 2: block rules (admonitions)
-    for rule_name, rule in rules.items():
-        if rule.get("type") == "block":
-            convert = rule.get("convert", {})
-            from_raw = convert.get("from", "")
-            to_raw = convert.get("to", "")
-            if from_raw and to_raw:
-                pattern = _parse_pattern(from_raw)
-                content = _apply_block_rule(content, pattern, to_raw)
-
-    # Phase 3: regex rules (frontmatter_refs, fontawesome, etc.)
-    for rule_name, rule in rules.items():
-        if rule.get("type") == "regex":
-            convert = rule.get("convert", {})
-            from_raw = convert.get("from", "")
-            to_raw = convert.get("to", "")
-            if from_raw and to_raw:
-                pattern = _parse_pattern(from_raw)
-                content = pattern.sub(to_raw, content)
-
-    # Phase 4: tabs
-    for rule_name, rule in rules.items():
-        if rule.get("type") == "tabs":
-            content = _apply_tabs(content)
-
-    return content
