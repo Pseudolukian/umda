@@ -30,10 +30,12 @@ _CONF="$(_find_umda)"
 if [ -z "$_CONF" ]; then echo "ERROR: umda.yml not found. Set UMDA_YML or run from doc source dir."; return 1 2>/dev/null; exit 1; fi
 _C="python3 $_SD/umda_conf.py $_CONF"
 
-DOC_INPUT=$($_C config.doc_input)
-DOC_OUTPUT=$($_C adapers.vuepress_hope.doc_output)
-SITE_DIR=$($_C adapers.vuepress_hope.site_dir)
-VP_PATH=$($_C adapers.vuepress_hope.vuepress_path)
+DOC_INPUT=$($_C config.doc_input) || { echo "ERROR: failed to resolve config.doc_input from $_CONF"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
+DOC_OUTPUT=$($_C adapers.vuepress_hope.doc_output) || { echo "ERROR: failed to resolve adapers.vuepress_hope.doc_output from $_CONF"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
+SITE_DIR=$($_C adapers.vuepress_hope.site_dir) || { echo "ERROR: failed to resolve adapers.vuepress_hope.site_dir from $_CONF"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
+VP_PATH=$($_C adapers.vuepress_hope.vuepress_path) || { echo "ERROR: failed to resolve adapers.vuepress_hope.vuepress_path from $_CONF"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
+[ -n "$DOC_INPUT" ] || { echo "ERROR: config.doc_input is empty"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
+[ -n "$VP_PATH" ] || { echo "ERROR: adapers.vuepress_hope.vuepress_path is empty"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
 VP_PROJECT="$(dirname "$(dirname "$VP_PATH")")"
 
 echo "═══════════════════════════════════════"
@@ -51,12 +53,12 @@ rm -rf "$VP_PATH/.temp" "$VP_PATH/.cache" 2>/dev/null
 
 echo ""
 echo "▶ Step 1: UMDA vuepress_hope adapter"
-cd "$DOC_INPUT"
+cd "$DOC_INPUT" || { echo "ERROR: can't cd to DOC_INPUT='$DOC_INPUT'"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
 python3 "$_SD/main.py" vuepress_hope build || { echo "ERROR: UMDA failed"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
 
 echo ""
 echo "▶ Step 2: VuePress build"
-cd "$VP_PROJECT"
+cd "$VP_PROJECT" || { echo "ERROR: can't cd to VuePress project '$VP_PROJECT'"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
 npx vuepress-vite build src --dest "$SITE_DIR" || { echo "ERROR: VuePress failed"; cd "$_OD"; return 1 2>/dev/null; exit 1; }
 
 echo ""

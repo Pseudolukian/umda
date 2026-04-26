@@ -1,2 +1,4 @@
 __pycache__
 .mkdocs
+env_vars.sh
+
