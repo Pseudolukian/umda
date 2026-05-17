@@ -8,7 +8,7 @@ admotion_info_collapse:
   type: block
   convert:
     from: 'r''ℹ️🔽 "?(.+?)"?\s*$'''
-    to: '::: details \1'
+    to: ':::: details \1'
   examples:
     src: 'ℹ️🔽 "Поток управления «в остальных случаях», поток по умолчанию"'
     convert: '::: details Поток управления «в остальных случаях», поток по умолчанию'
@@ -35,7 +35,7 @@ drop-down:
   type: block
   convert:
     from: 'r''🔽 "?(.+?)"?\s*$'''
-    to: '::: details \1'
+    to: ':::: details \1'
   examples:
     src: '🔽 "Что такое группа?"'
     convert: '::: details Что такое группа?'
@@ -44,7 +44,7 @@ mkdocs_collapsible:
   type: block
   convert:
     from: 'r''^\?\?\?\+?\s+\w+\s+"?(.+?)"?\s*$'''
-    to: '::: details \1'
+    to: ':::: details \1'
   examples:
     src: '??? note "Подробности"'
     convert: '::: details Подробности'

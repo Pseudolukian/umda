@@ -49,7 +49,14 @@ def _apply_block_rule(content: str, pattern: re.Pattern, container_header: str) 
             header = container_header
             for gi in range(1, len(m.groups()) + 1):
                 header = header.replace(f"\\{gi}", m.group(gi) or "")
-            result.append(header.rstrip())
+            header_line = header.rstrip()
+            result.append(header_line)
+
+            # Close with the same fence length as opening (e.g. :::: details -> ::::).
+            close_fence = ":::"
+            fence_match = re.match(r"^\s*(:+)", header_line)
+            if fence_match:
+                close_fence = ":" * len(fence_match.group(1))
             i += 1
 
             if i < len(lines) and lines[i].strip() == "":
@@ -82,7 +89,7 @@ def _apply_block_rule(content: str, pattern: re.Pattern, container_header: str) 
                         result.append(line)
                     i += 1
 
-            result.append(":::")
+            result.append(close_fence)
             result.append("")
         else:
             result.append(lines[i])
