@@ -20,6 +20,9 @@ _IMG_LINK_RE = re.compile(r'(!\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]\((?!https?://)(?
 # Parses alt: "Base;Focuses=[A,B];Frames=[C,D]"
 _ARG_RE = re.compile(r'(\w+)=\[([^\]]*)\]')
 
+# Matches include marker: ➡️ (path/to/file.md)
+_INCLUDE_RE = re.compile(r'^➡️\s*\((.+?)\)\s*$', re.MULTILINE)
+
 
 def _is_s3_media_target(media_out: str, s3_cfg: S3Config | None) -> bool:
     """Detect S3 media target.
@@ -143,92 +146,157 @@ class MDHandle:
         if count:
             print(f"[{rel}] updated {count} image(s)")
 
-    def md_process(self, content: str, md_file: Path) -> tuple[str, int]:
+    def _resolve_include_target(self, include_path: str, md_file: Path) -> Path | None:
+        rel = Path(include_path)
+
+        candidates: list[Path] = []
+        if rel.is_absolute():
+            candidates.append(rel)
+        elif include_path.startswith("./") or include_path.startswith("../"):
+            candidates.extend([
+                (md_file.parent / rel).resolve(),
+                (self.docs_dir / rel).resolve(),
+            ])
+        else:
+            candidates.extend([
+                (self.docs_dir / rel).resolve(),
+                (md_file.parent / rel).resolve(),
+            ])
+
+        for target in candidates:
+            if target.exists():
+                return target
+            parent = target.parent
+            if parent.exists():
+                for f in parent.iterdir():
+                    if f.name.lower() == target.name.lower():
+                        return f
+
+        return None
+
+    def _expand_includes(self, content: str, md_file: Path, include_stack: set[Path]) -> tuple[str, int]:
+        include_count = 0
+
+        def replacer(m: re.Match) -> str:
+            nonlocal include_count
+            include_path = m.group(1).strip()
+            target = self._resolve_include_target(include_path, md_file)
+            if not target:
+                print(f"  [include] WARNING: not found: {include_path} (in {md_file})")
+                return m.group(0)
+
+            target_resolved = target.resolve()
+            if target_resolved in include_stack:
+                print(f"  [include] WARNING: recursive include skipped: {target} (in {md_file})")
+                return m.group(0)
+
+            included_raw = target.read_text(encoding="utf-8")
+            included_processed, nested_count = self.md_process(included_raw, target, include_stack)
+            include_count += nested_count
+            return included_processed.rstrip()
+
+        return _INCLUDE_RE.sub(replacer, content), include_count
+
+    def md_process(self, content: str, md_file: Path, include_stack: set[Path] | None = None) -> tuple[str, int]:
         count = 0
 
-        def psd_replacer(m: re.Match) -> str:
-            nonlocal count
-            full_match = m.group(1)
-            alt = m.group(2).strip()
-            var_path = m.group(3).strip()
+        if include_stack is None:
+            include_stack = set()
 
-            psd_path = self.data.resolve(var_path)
-            if not psd_path:
-                print(f"  WARN: cannot resolve '{var_path}' — skipping")
-                return full_match
+        current_file = md_file.resolve()
+        if current_file in include_stack:
+            print(f"  [include] WARNING: recursive include skipped: {md_file}")
+            return content, count
 
-            parts = alt.split(";")
-            base_layer = parts[0].strip()
-            kwargs: dict[str, list[str]] = {}
-            for part in parts[1:]:
-                arg_m = _ARG_RE.match(part.strip())
-                if arg_m:
-                    kwargs[arg_m.group(1)] = [
-                        v.strip().strip('"\'') for v in arg_m.group(2).split(",") if v.strip()
-                    ]
+        include_stack.add(current_file)
+        try:
+            content, nested_count = self._expand_includes(content, md_file, include_stack)
+            count += nested_count
 
-            try:
-                config = PSDConfig(psd_path=str(psd_path), base_layer=base_layer, **kwargs)
-                out_path = self.psd_handler.render(config)
-            except Exception as e:
-                print(f"  ERROR rendering '{alt}': {e}")
-                return full_match
+            def psd_replacer(m: re.Match) -> str:
+                nonlocal count
+                full_match = m.group(1)
+                alt = m.group(2).strip()
+                var_path = m.group(3).strip()
 
-            count += 1
-            out = Path(out_path)
-            if self.s3_enabled and out.is_relative_to(self.local_media_root):
-                rel_path = out.relative_to(self.local_media_root)
-                self._upload_to_s3(out, rel_path)
-                return f"![{alt}]({self._media_link(rel_path)})"
-            if self.media_base_url and out.is_relative_to(self.media_storage_output):
-                rel_path = out.relative_to(self.media_storage_output)
-                return f"![{alt}]({self._media_link(rel_path)})"
-            elif out.is_relative_to(self.docs_dir):
-                return f"![{alt}]({out.relative_to(self.docs_dir)})"
-            return f"![{alt}]({out})"
+                psd_path = self.data.resolve(var_path)
+                if not psd_path:
+                    print(f"  WARN: cannot resolve '{var_path}' — skipping")
+                    return full_match
 
-        content = _PSD_LINK_RE.sub(psd_replacer, content)
+                parts = alt.split(";")
+                base_layer = parts[0].strip()
+                kwargs: dict[str, list[str]] = {}
+                for part in parts[1:]:
+                    arg_m = _ARG_RE.match(part.strip())
+                    if arg_m:
+                        kwargs[arg_m.group(1)] = [
+                            v.strip().strip('"\'') for v in arg_m.group(2).split(",") if v.strip()
+                        ]
 
-        def img_replacer(m: re.Match) -> str:
-            nonlocal count
-            full_match = m.group(1)
-            alt = m.group(2)
-            img_path_str = m.group(3).strip()
+                try:
+                    config = PSDConfig(psd_path=str(psd_path), base_layer=base_layer, **kwargs)
+                    out_path = self.psd_handler.render(config)
+                except Exception as e:
+                    print(f"  ERROR rendering '{alt}': {e}")
+                    return full_match
 
-            src = (md_file.parent / img_path_str).resolve()
-            if not src.exists():
-                print(f"  WARN: image not found '{src}' — skipping")
-                return full_match
+                count += 1
+                out = Path(out_path)
+                if self.s3_enabled and out.is_relative_to(self.local_media_root):
+                    rel_path = out.relative_to(self.local_media_root)
+                    # self._upload_to_s3(out, rel_path)
+                    return f"![{alt}]({self._media_link(rel_path)})"
+                if self.media_base_url and out.is_relative_to(self.media_storage_output):
+                    rel_path = out.relative_to(self.media_storage_output)
+                    return f"![{alt}]({self._media_link(rel_path)})"
+                elif out.is_relative_to(self.docs_dir):
+                    return f"![{alt}]({out.relative_to(self.docs_dir)})"
+                return f"![{alt}]({out})"
 
-            try:
-                rel_to_docs = src.relative_to(self.docs_dir)
-            except ValueError:
-                rel_to_docs = Path(src.name)
+            content = _PSD_LINK_RE.sub(psd_replacer, content)
 
-            dst = (self.local_media_root / rel_to_docs).with_suffix(f".{self.image_ext}")
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            def img_replacer(m: re.Match) -> str:
+                nonlocal count
+                full_match = m.group(1)
+                alt = m.group(2)
+                img_path_str = m.group(3).strip()
 
-            src_ext = src.suffix.lower().lstrip(".")
-            if src_ext == self.image_ext:
-                shutil.copy2(src, dst)
-            else:
-                with Image.open(src) as img:
-                    mode = "RGBA" if self.image_ext == "webp" else "RGB"
-                    img.convert(mode).save(dst, format=self.image_ext)
+                src = (md_file.parent / img_path_str).resolve()
+                if not src.exists():
+                    print(f"  WARN: image not found '{src}' — skipping")
+                    return full_match
 
-            count += 1
-            if self.s3_enabled and dst.is_relative_to(self.local_media_root):
-                rel_path = dst.relative_to(self.local_media_root)
-                self._upload_to_s3(dst, rel_path)
-                return f"![{alt}]({self._media_link(rel_path)})"
-            if self.media_base_url:
-                rel_path = dst.relative_to(self.media_storage_output)
-                return f"![{alt}]({self._media_link(rel_path)})"
-            return f"![{alt}]({dst})"
+                try:
+                    rel_to_docs = src.relative_to(self.docs_dir)
+                except ValueError:
+                    rel_to_docs = Path(src.name)
 
-        content = _IMG_LINK_RE.sub(img_replacer, content)
+                dst = (self.local_media_root / rel_to_docs).with_suffix(f".{self.image_ext}")
+                dst.parent.mkdir(parents=True, exist_ok=True)
 
-        return content, count
+                src_ext = src.suffix.lower().lstrip(".")
+                if src_ext == self.image_ext:
+                    shutil.copy2(src, dst)
+                else:
+                    with Image.open(src) as img:
+                        mode = "RGBA" if self.image_ext == "webp" else "RGB"
+                        img.convert(mode).save(dst, format=self.image_ext)
+
+                count += 1
+                if self.s3_enabled and dst.is_relative_to(self.local_media_root):
+                    rel_path = dst.relative_to(self.local_media_root)
+#                # self._upload_to_s3(dst, rel_path)
+                    return f"![{alt}]({self._media_link(rel_path)})"
+                if self.media_base_url:
+                    rel_path = dst.relative_to(self.media_storage_output)
+                    return f"![{alt}]({self._media_link(rel_path)})"
+                return f"![{alt}]({dst})"
+
+            content = _IMG_LINK_RE.sub(img_replacer, content)
+            return content, count
+        finally:
+            include_stack.remove(current_file)
 
     def _init_s3_client(self) -> None:
         self.s3_bucket, self.s3_prefix = _parse_s3_target(self.media_storage_output_raw)
@@ -282,7 +350,7 @@ class MDHandle:
 
         content_type = mimetypes.guess_type(str(local_path))[0]
         extra = {"ContentType": content_type} if content_type else None
-        if extra:
-            self.s3_client.upload_file(str(local_path), self.s3_bucket, key, ExtraArgs=extra)
-        else:
-            self.s3_client.upload_file(str(local_path), self.s3_bucket, key)
+#        if extra:
+#            # self.s3_client.upload_file(str(local_path), self.s3_bucket, key, ExtraArgs=extra)
+#        else:
+#            # self.s3_client.upload_file(str(local_path), self.s3_bucket, key)
