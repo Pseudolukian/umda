@@ -18,6 +18,16 @@ import yaml
 from pathlib import Path
 
 _SWAP_LIST = Path(__file__).parent / "swap_list.yml"
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _render_inline_title_md(text: str) -> str:
+    """Render a small subset of inline markdown inside admonition titles.
+
+    VuePress hint container titles are not parsed as markdown by default,
+    so convert bold syntax to inline HTML to preserve expected rendering.
+    """
+    return _BOLD_RE.sub(r"<strong>\1</strong>", text)
 
 
 def _parse_pattern(from_str: str) -> re.Pattern:
@@ -48,7 +58,8 @@ def _apply_block_rule(content: str, pattern: re.Pattern, container_header: str) 
         if m:
             header = container_header
             for gi in range(1, len(m.groups()) + 1):
-                header = header.replace(f"\\{gi}", m.group(gi) or "")
+                group_value = _render_inline_title_md(m.group(gi) or "")
+                header = header.replace(f"\\{gi}", group_value)
             header_line = header.rstrip()
             result.append(header_line)
 
